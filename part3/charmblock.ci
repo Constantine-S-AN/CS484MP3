@@ -1,0 +1,75 @@
+module charmblock {
+
+	include "gassim2d.h";
+
+	array [2D] CharmBlock {
+		entry CharmBlock(
+			int xsize, int ysize,
+			int N_steps,
+			std::string file_output_basename, int _output_at_iteration,
+			int particle_migration_frequency,
+			double spatial_extent,
+			double temp_kelvin,
+			double lattice_pitch, double high_density, double low_density,
+			int generator_seed,
+			int _process_migration_frequency
+		);
+		//entry CharmBlock(CkMigrateMessage *msg);
+
+		entry void hello();
+
+		entry void run_until_done(){
+			for(; current_iteration < N_steps;++current_iteration){//phase will get incremented elsewhere
+
+				//every k steps, we migrate.
+				if(0 == current_iteration%my_sim_block->exchange_frequency){
+					serial{
+						send_migrants();
+					}
+					for(n_received=1;n_received<=n_neighbors;++n_received){
+						when receive_migrants[current_iteration](int phase, int from, int direction, std::vector<phys_particle_t> ghosts)
+						serial {
+							receive_migrants_impl(phase, from, direction, ghosts);
+
+							#ifdef DEBUG
+							CkPrintf("(%i,%i):%i received (migrants) %i \n",thisIndex.x, thisIndex.y, current_iteration, n_received);
+							#endif
+						}
+					}
+
+				}
+
+				//send ghosts here
+				serial{
+					my_sim_block->N_ghosts = 0;
+					send_ghosts();
+				}
+				for(n_received=1;n_received<=n_neighbors;++n_received){
+					when receive_ghosts[current_iteration](int phase, int from, int direction, std::vector<phys_particle_t> ghosts)
+					serial {
+						receive_ghosts_impl(phase, from, direction, ghosts);
+						#ifdef DEBUG
+						CkPrintf("(%i,%i):%i received (ghosts) %i \n",thisIndex.x, thisIndex.y, current_iteration, n_received);
+						#endif
+					}
+				}
+				serial{
+					handle_phase();
+				}
+
+				if(current_iteration%process_migration_frequency == (process_migration_frequency-1)){
+					//PUT SYNC CODE HERE
+				}
+			}
+
+			serial{
+				mainProxy.done();
+			}
+		};
+
+		entry void receive_migrants(int sender_phase, int from, int direction, std::vector<phys_particle_t> ghosts);
+		entry void receive_ghosts(int sender_phase, int from, int direction, std::vector<phys_particle_t> ghosts);
+
+		entry void ResumeFromSync();
+		};
+};

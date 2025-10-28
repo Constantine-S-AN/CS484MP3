@@ -1,0 +1,7 @@
+*~
+bld
+build
+boost-cmake/boost/*
+boost-cmake/*.tar.xz
+CMakeCache.txt
+CMakeFiles

@@ -1,0 +1,13 @@
+mainmodule simmain {
+
+	readonly CProxy_SimMain mainProxy;
+
+	extern module charmblock;
+
+	mainchare SimMain {
+		entry SimMain(CkArgMsg* msg);
+		//entry SimMain(CkMigrateMessage* msg);
+
+		entry void done();
+	};
+};
