@@ -1,18 +1,6 @@
 # Building
 
-You can either use the scripts to build MP3, or you can manually build like so:
-
-```
-mkdir build && cd build 			\\create a build directory & move inside it
-/projects/eng/shared/cs484/run_singularity.sh 	\\run the course Singularity container
-cmake .. 					\\run cmake with the mp3 root directory to create the makefile
-make 						\\run make to build mp3
-exit 						\\exit the Singularity container
-```
-
-This will create programs named
-	* `build/bin/part1`
-	* `build/bin/part2`
+You can use the provided scripts to build MP3.
 
 # Running the programs
 
