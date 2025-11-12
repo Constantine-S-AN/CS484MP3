@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --time=00:25:00
-#SBATCH --nodes=2
+#SBATCH --nodes=1
 #SBATCH --ntasks=40
 #SBATCH --exclusive
 #SBATCH --job-name "mp3-benchmark"
