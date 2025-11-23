@@ -4,6 +4,10 @@ project(mp3 VERSION 1.0.0 LANGUAGES C CXX)
 option(TA_PROJECT_TESTS "Turned on when testing code to provide to students." OFF)
 option(DOWNLOAD_BOOST "Use this to download boost into this directory, instead of searching the system." OFF)
 
+# Prefer optimized builds by default.
+set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+add_compile_options(-O3 -DNDEBUG)
+
 
 # Location of additional cmake modules
 set(CMAKE_MODULE_PATH

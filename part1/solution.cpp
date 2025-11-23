@@ -85,6 +85,11 @@ int MPISimulationBlock::exchange_particles(){
 	}else{
 		for(auto &buf : outgoing_buffers){ buf.clear(); }
 	}
+	// Reserve a bit to reduce reallocations.
+	const size_t reserve_hint = static_cast<size_t>(std::max<int>(N_particles / 8, 1024));
+	for(auto &buf : outgoing_buffers){
+		if(buf.capacity() < reserve_hint){ buf.reserve(reserve_hint); }
+	}
 
 	// First pass: classify and remove migrants.
 	for(int i = static_cast<int>(N_particles) - 1; i >= 0; --i){
@@ -106,29 +111,45 @@ int MPISimulationBlock::exchange_particles(){
 	// Adjust coordinates for wraparound on edge-crossing particles.
 	outgoing_wrap();
 
-	// Two-phase exchange: counts then payloads.
+	// Non-blocking count exchange with all neighbors.
 	std::array<int, DirectionIndex::NUM_DIRS> send_counts{};
 	std::array<int, DirectionIndex::NUM_DIRS> recv_counts{};
+	std::vector<MPI_Request> count_reqs;
+	count_reqs.reserve(DirectionIndex::NUM_DIRS * 2);
 	for(int k = 0; k < DirectionIndex::NUM_DIRS; ++k){
-		send_counts[k] = static_cast<int>(outgoing_buffers[k].size());
 		int neighbor = neighbor_ranks[k];
-		MPI_Sendrecv(&send_counts[k], 1, MPI_INT, neighbor, 100 + k,
-					 &recv_counts[k], 1, MPI_INT, neighbor, 100 + k,
-					 my_comm, MPI_STATUS_IGNORE);
+		MPI_Request rreq;
+		MPI_Irecv(&recv_counts[k], 1, MPI_INT, neighbor, 100 + k, my_comm, &rreq);
+		count_reqs.push_back(rreq);
+		send_counts[k] = static_cast<int>(outgoing_buffers[k].size());
+		MPI_Request sreq;
+		MPI_Isend(&send_counts[k], 1, MPI_INT, neighbor, 100 + k, my_comm, &sreq);
+		count_reqs.push_back(sreq);
+	}
+	if(!count_reqs.empty()){
+		MPI_Waitall(static_cast<int>(count_reqs.size()), count_reqs.data(), MPI_STATUSES_IGNORE);
 	}
 
-	// Post receives and sends for particle payloads.
+	// Compute total incoming and offsets; receive directly into all_particles.
+	int total_in = 0;
+	std::array<int, DirectionIndex::NUM_DIRS> offsets{};
+	for(int k = 0; k < DirectionIndex::NUM_DIRS; ++k){
+		offsets[k] = total_in;
+		total_in += recv_counts[k];
+	}
+	const unsigned int oldN = N_particles;
+	if(static_cast<int>(oldN) + total_in > static_cast<int>(get_max_particles())){
+		set_max_particles(static_cast<unsigned int>(oldN + total_in));
+	}
+
 	std::vector<MPI_Request> requests;
 	requests.reserve(DirectionIndex::NUM_DIRS * 2);
-
-	std::array<std::vector<phys_particle_t>, DirectionIndex::NUM_DIRS> incoming_buffers;
 	for(int k = 0; k < DirectionIndex::NUM_DIRS; ++k){
 		int neighbor = neighbor_ranks[k];
 		int rcount = recv_counts[k];
 		if(rcount > 0){
-			incoming_buffers[k].resize(rcount);
 			MPI_Request req;
-			MPI_Irecv(incoming_buffers[k].data(), rcount, exchanged_particle_mpidt,
+			MPI_Irecv(&all_particles[oldN + offsets[k]], rcount, exchanged_particle_mpidt,
 					  neighbor, 200 + k, my_comm, &req);
 			requests.push_back(req);
 		}
@@ -145,12 +166,7 @@ int MPISimulationBlock::exchange_particles(){
 		MPI_Waitall(static_cast<int>(requests.size()), requests.data(), MPI_STATUSES_IGNORE);
 	}
 
-	// Append received particles to local storage.
-	for(int k = 0; k < DirectionIndex::NUM_DIRS; ++k){
-		for(const auto &p : incoming_buffers[k]){
-			add_particle(p);
-		}
-	}
+	N_particles = oldN + static_cast<unsigned int>(total_in);
 
 	return 0;
 }
@@ -188,6 +204,10 @@ int MPISimulationBlock::communicate_ghosts(){
 	// Prepare buffers per direction.
 	std::array<std::vector<phys_particle_t>, DirectionIndex::NUM_DIRS> send_bufs;
 	for(auto &buf : send_bufs){ buf.clear(); }
+	const size_t reserve_hint = static_cast<size_t>(std::max<int>(N_particles / 8, 256));
+	for(auto &buf : send_bufs){
+		if(buf.capacity() < reserve_hint){ buf.reserve(reserve_hint); }
+	}
 
 	// Helper to push particle into correct ghost buffers.
 	for(unsigned int i = 0; i < N_particles; ++i){
@@ -217,29 +237,44 @@ int MPISimulationBlock::communicate_ghosts(){
 		if(s && w){ send_bufs[DirectionIndex::SW].push_back(adj); }
 	}
 
-	// Exchange counts.
+	// Non-blocking count exchange.
 	std::array<int, DirectionIndex::NUM_DIRS> send_counts{};
 	std::array<int, DirectionIndex::NUM_DIRS> recv_counts{};
+	std::vector<MPI_Request> count_reqs;
+	count_reqs.reserve(DirectionIndex::NUM_DIRS * 2);
 	for(int k = 0; k < DirectionIndex::NUM_DIRS; ++k){
-		send_counts[k] = static_cast<int>(send_bufs[k].size());
 		int neighbor = neighbor_ranks[k];
-		MPI_Sendrecv(&send_counts[k], 1, MPI_INT, neighbor, 300 + k,
-					 &recv_counts[k], 1, MPI_INT, neighbor, 300 + k,
-					 my_comm, MPI_STATUS_IGNORE);
+		MPI_Request rreq;
+		MPI_Irecv(&recv_counts[k], 1, MPI_INT, neighbor, 300 + k, my_comm, &rreq);
+		count_reqs.push_back(rreq);
+		send_counts[k] = static_cast<int>(send_bufs[k].size());
+		MPI_Request sreq;
+		MPI_Isend(&send_counts[k], 1, MPI_INT, neighbor, 300 + k, my_comm, &sreq);
+		count_reqs.push_back(sreq);
+	}
+	if(!count_reqs.empty()){
+		MPI_Waitall(static_cast<int>(count_reqs.size()), count_reqs.data(), MPI_STATUSES_IGNORE);
 	}
 
-	// Payload exchange.
+	// Compute offsets and total ghosts; receive directly into all_ghosts.
+	int total_ghosts = 0;
+	std::array<int, DirectionIndex::NUM_DIRS> offsets{};
+	for(int k = 0; k < DirectionIndex::NUM_DIRS; ++k){
+		offsets[k] = total_ghosts;
+		total_ghosts += recv_counts[k];
+	}
+	if(total_ghosts > static_cast<int>(get_max_particles())){
+		set_max_particles(static_cast<unsigned int>(N_particles + total_ghosts));
+	}
+
 	std::vector<MPI_Request> requests;
 	requests.reserve(DirectionIndex::NUM_DIRS * 2);
-	std::array<std::vector<phys_particle_t>, DirectionIndex::NUM_DIRS> recv_bufs;
-
 	for(int k = 0; k < DirectionIndex::NUM_DIRS; ++k){
 		int neighbor = neighbor_ranks[k];
 		int rcount = recv_counts[k];
 		if(rcount > 0){
-			recv_bufs[k].resize(rcount);
 			MPI_Request req;
-			MPI_Irecv(recv_bufs[k].data(), rcount, ghost_particle_mpidt,
+			MPI_Irecv(&all_ghosts[offsets[k]], rcount, ghost_particle_mpidt,
 					  neighbor, 400 + k, my_comm, &req);
 			requests.push_back(req);
 		}
@@ -256,17 +291,7 @@ int MPISimulationBlock::communicate_ghosts(){
 		MPI_Waitall(static_cast<int>(requests.size()), requests.data(), MPI_STATUSES_IGNORE);
 	}
 
-	// Fill all_ghosts contiguously.
-	unsigned int ghost_idx = 0;
-	for(int k = 0; k < DirectionIndex::NUM_DIRS; ++k){
-		for(const auto &p : recv_bufs[k]){
-			if(ghost_idx >= get_max_particles()){
-				throw std::runtime_error("Ghost buffer overflow");
-			}
-			all_ghosts[ghost_idx++] = p;
-		}
-	}
-	N_ghosts = ghost_idx;
+	N_ghosts = static_cast<unsigned int>(total_ghosts);
 
 	return 0;
 }
