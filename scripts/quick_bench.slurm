@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J mp3-quickbench
-#SBATCH -p eng-instr
+#SBATCH -p eng-instruction
 #SBATCH -A 25fa-cs484pp4-eng
 #SBATCH -N 2
 #SBATCH -n 36
