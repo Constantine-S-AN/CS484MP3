@@ -9,6 +9,8 @@
 
 #include <mpi.h>
 
+// Definition of static constexpr dir_masks declared in the header.
+constexpr sim_direction_t MPISimulationBlock::dir_masks[DirectionIndex::NUM_DIRS];
 
 inline void MPISimulationBlock::outgoing_wrap(){
 	// If I am on one of the edges and wraparound is permitted, adjust positions
