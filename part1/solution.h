@@ -46,6 +46,32 @@ private://but students can access
 	inline void outgoing_wrap();
 
 	//You may need to add your own variables.
+	// Precomputed neighbor ranks for each direction we communicate with.
+	// Indexed by DirectionIndex below.
+	std::vector<int> neighbor_ranks;
+	// Order of directions used for communication loops.
+	enum DirectionIndex {
+		N = 0,
+		S,
+		E,
+		W,
+		NE,
+		NW,
+		SE,
+		SW,
+		NUM_DIRS
+	};
+	// Convenience mapping of DirectionIndex -> sim_direction_t bitmask.
+	static constexpr sim_direction_t dir_masks[NUM_DIRS] = {
+		SimulationBlock::DIR_N,
+		SimulationBlock::DIR_S,
+		SimulationBlock::DIR_E,
+		SimulationBlock::DIR_W,
+		SimulationBlock::DIR_NE,
+		SimulationBlock::DIR_NW,
+		SimulationBlock::DIR_SE,
+		SimulationBlock::DIR_SW
+	};
 };
 
 
