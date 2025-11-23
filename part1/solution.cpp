@@ -13,18 +13,20 @@
 constexpr sim_direction_t MPISimulationBlock::dir_masks[DirectionIndex::NUM_DIRS];
 
 inline void MPISimulationBlock::outgoing_wrap(){
-	// If I am on one of the edges and wraparound is permitted, adjust positions
-	// of buffered migrants so that they re-enter on the opposite side.
+	// If I am on a global edge and wraparound is permitted, adjust positions
+	// of migrants that cross that edge so they re-enter on the opposite side.
 	const double world_w = the_grid.sizes.x;
 	const double world_h = the_grid.sizes.y;
 
 	for(size_t idx = 0; idx < outgoing_buffers.size() && idx < DirectionIndex::NUM_DIRS; ++idx){
 		sim_direction_t dir = dir_masks[idx];
+
+		// Only wrap if we are actually on that global edge (otherwise leave coords unchanged).
 		for(auto &p : outgoing_buffers[idx]){
-			if(DIR_HAS(SimulationBlock::DIR_N, dir)){ p.p.y += world_h; }
-			if(DIR_HAS(SimulationBlock::DIR_S, dir)){ p.p.y -= world_h; }
-			if(DIR_HAS(SimulationBlock::DIR_W, dir)){ p.p.x += world_w; }
-			if(DIR_HAS(SimulationBlock::DIR_E, dir)){ p.p.x -= world_w; }
+			if(north_edge && DIR_HAS(SimulationBlock::DIR_N, dir)){ p.p.y += world_h; }
+			if(south_edge && DIR_HAS(SimulationBlock::DIR_S, dir)){ p.p.y -= world_h; }
+			if(west_edge  && DIR_HAS(SimulationBlock::DIR_W, dir)){ p.p.x += world_w; }
+			if(east_edge  && DIR_HAS(SimulationBlock::DIR_E, dir)){ p.p.x -= world_w; }
 		}
 	}
 }
@@ -193,19 +195,26 @@ int MPISimulationBlock::communicate_ghosts(){
 		sim_direction_t dir = check_ghost_direction(p);
 		if(DIR_EQ(dir, SimulationBlock::DIR_SELF)){ continue; }
 
+		phys_particle_t adj = p;
+		// Wrap ghost coordinates only when sending across a global edge.
+		if(north_edge && DIR_HAS(SimulationBlock::DIR_N, dir)){ adj.p.y += the_grid.sizes.y; }
+		if(south_edge && DIR_HAS(SimulationBlock::DIR_S, dir)){ adj.p.y -= the_grid.sizes.y; }
+		if(west_edge  && DIR_HAS(SimulationBlock::DIR_W, dir)){ adj.p.x += the_grid.sizes.x; }
+		if(east_edge  && DIR_HAS(SimulationBlock::DIR_E, dir)){ adj.p.x -= the_grid.sizes.x; }
+
 		bool n = DIR_HAS(SimulationBlock::DIR_N, dir);
 		bool s = DIR_HAS(SimulationBlock::DIR_S, dir);
 		bool e = DIR_HAS(SimulationBlock::DIR_E, dir);
 		bool w = DIR_HAS(SimulationBlock::DIR_W, dir);
 
-		if(n){ send_bufs[DirectionIndex::N].push_back(p); }
-		if(s){ send_bufs[DirectionIndex::S].push_back(p); }
-		if(e){ send_bufs[DirectionIndex::E].push_back(p); }
-		if(w){ send_bufs[DirectionIndex::W].push_back(p); }
-		if(n && e){ send_bufs[DirectionIndex::NE].push_back(p); }
-		if(n && w){ send_bufs[DirectionIndex::NW].push_back(p); }
-		if(s && e){ send_bufs[DirectionIndex::SE].push_back(p); }
-		if(s && w){ send_bufs[DirectionIndex::SW].push_back(p); }
+		if(n){ send_bufs[DirectionIndex::N].push_back(adj); }
+		if(s){ send_bufs[DirectionIndex::S].push_back(adj); }
+		if(e){ send_bufs[DirectionIndex::E].push_back(adj); }
+		if(w){ send_bufs[DirectionIndex::W].push_back(adj); }
+		if(n && e){ send_bufs[DirectionIndex::NE].push_back(adj); }
+		if(n && w){ send_bufs[DirectionIndex::NW].push_back(adj); }
+		if(s && e){ send_bufs[DirectionIndex::SE].push_back(adj); }
+		if(s && w){ send_bufs[DirectionIndex::SW].push_back(adj); }
 	}
 
 	// Exchange counts.
