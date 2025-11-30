@@ -72,6 +72,17 @@ private://but students can access
 		SimulationBlock::DIR_SE,
 		SimulationBlock::DIR_SW
 	};
+	// Symmetric tag ids so opposite directions use the same MPI tag.
+	static constexpr int dir_pair_tags[NUM_DIRS] = {
+		0, // N
+		0, // S
+		1, // E
+		1, // W
+		2, // NE
+		3, // NW
+		2, // SE
+		3  // SW
+	};
 };
 
 

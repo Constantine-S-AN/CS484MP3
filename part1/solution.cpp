@@ -11,6 +11,8 @@
 
 // Definition of static constexpr dir_masks declared in the header.
 constexpr sim_direction_t MPISimulationBlock::dir_masks[DirectionIndex::NUM_DIRS];
+// Definition of static constexpr dir_pair_tags declared in the header.
+constexpr int MPISimulationBlock::dir_pair_tags[DirectionIndex::NUM_DIRS];
 
 inline void MPISimulationBlock::outgoing_wrap(){
 	// If I am on a global edge and wraparound is permitted, adjust positions
@@ -118,12 +120,13 @@ int MPISimulationBlock::exchange_particles(){
 	count_reqs.reserve(DirectionIndex::NUM_DIRS * 2);
 	for(int k = 0; k < DirectionIndex::NUM_DIRS; ++k){
 		int neighbor = neighbor_ranks[k];
+		const int tag = 100 + dir_pair_tags[k];
 		MPI_Request rreq;
-		MPI_Irecv(&recv_counts[k], 1, MPI_INT, neighbor, 100 + k, my_comm, &rreq);
+		MPI_Irecv(&recv_counts[k], 1, MPI_INT, neighbor, tag, my_comm, &rreq);
 		count_reqs.push_back(rreq);
 		send_counts[k] = static_cast<int>(outgoing_buffers[k].size());
 		MPI_Request sreq;
-		MPI_Isend(&send_counts[k], 1, MPI_INT, neighbor, 100 + k, my_comm, &sreq);
+		MPI_Isend(&send_counts[k], 1, MPI_INT, neighbor, tag, my_comm, &sreq);
 		count_reqs.push_back(sreq);
 	}
 	if(!count_reqs.empty()){
@@ -147,17 +150,18 @@ int MPISimulationBlock::exchange_particles(){
 	for(int k = 0; k < DirectionIndex::NUM_DIRS; ++k){
 		int neighbor = neighbor_ranks[k];
 		int rcount = recv_counts[k];
+		const int tag = 200 + dir_pair_tags[k];
 		if(rcount > 0){
 			MPI_Request req;
 			MPI_Irecv(&all_particles[oldN + offsets[k]], rcount, exchanged_particle_mpidt,
-					  neighbor, 200 + k, my_comm, &req);
+					  neighbor, tag, my_comm, &req);
 			requests.push_back(req);
 		}
 		int scount = send_counts[k];
 		if(scount > 0){
 			MPI_Request req;
 			MPI_Isend(outgoing_buffers[k].data(), scount, exchanged_particle_mpidt,
-					  neighbor, 200 + k, my_comm, &req);
+					  neighbor, tag, my_comm, &req);
 			requests.push_back(req);
 		}
 	}
@@ -244,12 +248,13 @@ int MPISimulationBlock::communicate_ghosts(){
 	count_reqs.reserve(DirectionIndex::NUM_DIRS * 2);
 	for(int k = 0; k < DirectionIndex::NUM_DIRS; ++k){
 		int neighbor = neighbor_ranks[k];
+		const int tag = 300 + dir_pair_tags[k];
 		MPI_Request rreq;
-		MPI_Irecv(&recv_counts[k], 1, MPI_INT, neighbor, 300 + k, my_comm, &rreq);
+		MPI_Irecv(&recv_counts[k], 1, MPI_INT, neighbor, tag, my_comm, &rreq);
 		count_reqs.push_back(rreq);
 		send_counts[k] = static_cast<int>(send_bufs[k].size());
 		MPI_Request sreq;
-		MPI_Isend(&send_counts[k], 1, MPI_INT, neighbor, 300 + k, my_comm, &sreq);
+		MPI_Isend(&send_counts[k], 1, MPI_INT, neighbor, tag, my_comm, &sreq);
 		count_reqs.push_back(sreq);
 	}
 	if(!count_reqs.empty()){
@@ -272,17 +277,18 @@ int MPISimulationBlock::communicate_ghosts(){
 	for(int k = 0; k < DirectionIndex::NUM_DIRS; ++k){
 		int neighbor = neighbor_ranks[k];
 		int rcount = recv_counts[k];
+		const int tag = 400 + dir_pair_tags[k];
 		if(rcount > 0){
 			MPI_Request req;
 			MPI_Irecv(&all_ghosts[offsets[k]], rcount, ghost_particle_mpidt,
-					  neighbor, 400 + k, my_comm, &req);
+					  neighbor, tag, my_comm, &req);
 			requests.push_back(req);
 		}
 		int scount = send_counts[k];
 		if(scount > 0){
 			MPI_Request req;
 			MPI_Isend(send_bufs[k].data(), scount, ghost_particle_mpidt,
-					  neighbor, 400 + k, my_comm, &req);
+					  neighbor, tag, my_comm, &req);
 			requests.push_back(req);
 		}
 	}
